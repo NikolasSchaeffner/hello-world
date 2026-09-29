@@ -16,14 +16,9 @@ REPO_RAW="https://raw.githubusercontent.com/nikolasschaeffner/hello-world/${REPO
 SKILL_NAME="hello-world"
 COMMAND_FILES=("hello.md")
 
-# Curated subagents from VoltAgent/awesome-claude-code-subagents (MIT, see .claude/agents/LICENSE-VoltAgent)
-AGENT_FILES=(
-  "java-architect.md" "code-reviewer.md" "architect-reviewer.md" "qa-expert.md"
-  "debugger.md" "refactoring-specialist.md" "test-automator.md"
-  "documentation-engineer.md" "technical-writer.md"
-  "competitive-analyst.md" "business-analyst.md" "market-researcher.md" "research-analyst.md"
-  "fintech-engineer.md" "risk-manager.md" "microservices-architect.md"
-)
+# Subagents from VoltAgent/awesome-claude-code-subagents (MIT, see .claude/agents/LICENSE-VoltAgent).
+# The list of files lives in .claude/agents/agents.txt and is loaded by load_agent_list.
+AGENT_FILES=()
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 info()    { echo -e "${CYAN}[hello-world]${NC} $*"; }
@@ -43,6 +38,17 @@ fetch() {
   curl -fsSL "$url" -o "$dest" || error "Failed to download: $url"
 }
 
+# ---- agent list -------------------------------------------------------------
+load_agent_list() {
+  local list
+  list="$(curl -fsSL "$REPO_RAW/.claude/agents/agents.txt")" || error "Failed to download agent list"
+  while IFS= read -r line; do
+    # only plain file names like "code-reviewer.md", never paths
+    [[ "$line" =~ ^[A-Za-z0-9._-]+\.md$ ]] && AGENT_FILES+=("$line")
+  done <<< "$list"
+  [[ ${#AGENT_FILES[@]} -gt 0 ]] || error "Agent list is empty"
+}
+
 # ---- shared install step -----------------------------------------------------
 # $1 = base directory that receives commands/ and agents/ (e.g. ~/.claude)
 install_into() {
@@ -53,6 +59,7 @@ install_into() {
     fetch "$REPO_RAW/.claude/commands/$file" "$base/commands/$file"
     success "Installed command $file"
   done
+  load_agent_list
   info "Installing ${#AGENT_FILES[@]} subagents to: $base/agents"
   for file in "${AGENT_FILES[@]}"; do
     fetch "$REPO_RAW/.claude/agents/$file" "$base/agents/$file"
@@ -81,6 +88,7 @@ install_desktop() {
   for file in "${COMMAND_FILES[@]}"; do
     fetch "$REPO_RAW/.claude/commands/$file" "$zip_dir/.claude/commands/$file"
   done
+  load_agent_list
   for file in "${AGENT_FILES[@]}"; do
     fetch "$REPO_RAW/.claude/agents/$file" "$zip_dir/.claude/agents/$file"
   done
