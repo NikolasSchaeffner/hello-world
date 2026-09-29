@@ -2,16 +2,28 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Hello World Skill — Remote Installer
+# Hello World Skill + Subagents — Remote Installer
+# Installs the /hello command and a curated set of Claude Code subagents.
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/nikolasschaeffner/hello-world/main/scripts/remote-install.sh | bash -s -- --user
 #   curl -fsSL https://raw.githubusercontent.com/nikolasschaeffner/hello-world/main/scripts/remote-install.sh | bash -s -- --project
 #   curl -fsSL https://raw.githubusercontent.com/nikolasschaeffner/hello-world/main/scripts/remote-install.sh | bash -s -- --desktop
 # ---------------------------------------------------------------------------
 
-REPO_RAW="https://raw.githubusercontent.com/nikolasschaeffner/hello-world/main"
+# Branch or tag to install from (override with HELLO_WORLD_REF=<branch>)
+REPO_REF="${HELLO_WORLD_REF:-main}"
+REPO_RAW="https://raw.githubusercontent.com/nikolasschaeffner/hello-world/${REPO_REF}"
 SKILL_NAME="hello-world"
 COMMAND_FILES=("hello.md")
+
+# Curated subagents from VoltAgent/awesome-claude-code-subagents (MIT, see .claude/agents/LICENSE-VoltAgent)
+AGENT_FILES=(
+  "java-architect.md" "code-reviewer.md" "architect-reviewer.md" "qa-expert.md"
+  "debugger.md" "refactoring-specialist.md" "test-automator.md"
+  "documentation-engineer.md" "technical-writer.md"
+  "competitive-analyst.md" "business-analyst.md" "market-researcher.md" "research-analyst.md"
+  "fintech-engineer.md" "risk-manager.md" "microservices-architect.md"
+)
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 info()    { echo -e "${CYAN}[hello-world]${NC} $*"; }
@@ -31,38 +43,46 @@ fetch() {
   curl -fsSL "$url" -o "$dest" || error "Failed to download: $url"
 }
 
+# ---- shared install step -----------------------------------------------------
+# $1 = base directory that receives commands/ and agents/ (e.g. ~/.claude)
+install_into() {
+  local base="$1"
+  mkdir -p "$base/commands" "$base/agents"
+  info "Installing commands to: $base/commands"
+  for file in "${COMMAND_FILES[@]}"; do
+    fetch "$REPO_RAW/.claude/commands/$file" "$base/commands/$file"
+    success "Installed command $file"
+  done
+  info "Installing ${#AGENT_FILES[@]} subagents to: $base/agents"
+  for file in "${AGENT_FILES[@]}"; do
+    fetch "$REPO_RAW/.claude/agents/$file" "$base/agents/$file"
+    success "Installed agent ${file%.md}"
+  done
+}
+
 # ---- installation modes -----------------------------------------------------
 install_user() {
-  local target="$HOME/.claude/commands"
-  mkdir -p "$target"
-  info "Installing to user commands: $target"
-  for file in "${COMMAND_FILES[@]}"; do
-    fetch "$REPO_RAW/.claude/commands/$file" "$target/$file"
-    success "Installed $file"
-  done
-  success "Done! Run /hello in Claude Code to try it."
+  install_into "$HOME/.claude"
+  success "Done! Restart Claude Code, then run /hello or /agents to see the subagents."
 }
 
 install_project() {
-  local target="./.claude/commands"
-  mkdir -p "$target"
-  info "Installing to project commands: $target"
-  for file in "${COMMAND_FILES[@]}"; do
-    fetch "$REPO_RAW/.claude/commands/$file" "$target/$file"
-    success "Installed $file"
-  done
-  success "Done! Run /hello in Claude Code (from this project) to try it."
+  install_into "./.claude"
+  success "Done! Restart Claude Code in this project, then run /hello or /agents."
 }
 
 install_desktop() {
   local zip_dir="${TMPDIR:-/tmp}/hello-world-skill-$$"
   local zip_dest="$HOME/Downloads/${SKILL_NAME}.zip"
-  mkdir -p "$zip_dir/.claude/commands"
+  mkdir -p "$zip_dir/.claude/commands" "$zip_dir/.claude/agents"
 
   info "Building zip package for Claude Desktop / Web..."
 
   for file in "${COMMAND_FILES[@]}"; do
     fetch "$REPO_RAW/.claude/commands/$file" "$zip_dir/.claude/commands/$file"
+  done
+  for file in "${AGENT_FILES[@]}"; do
+    fetch "$REPO_RAW/.claude/agents/$file" "$zip_dir/.claude/agents/$file"
   done
 
   fetch "$REPO_RAW/SKILL.md"   "$zip_dir/SKILL.md"   2>/dev/null || true
@@ -85,8 +105,8 @@ interactive_mode() {
   echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
   echo "Where would you like to install?"
-  echo "  1) User  — ~/.claude/commands/  (available in all projects)"
-  echo "  2) Project — ./.claude/commands/  (current directory only)"
+  echo "  1) User  — ~/.claude/  (available in all projects)"
+  echo "  2) Project — ./.claude/  (current directory only)"
   echo "  3) Desktop/Web — download a zip to ~/Downloads/"
   echo ""
   read -rp "Choice [1]: " choice
